@@ -39,7 +39,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:
 #rot{display:none;z-index:9}
 @media (orientation:portrait){#rot{display:flex}}
 #startBtn{background:var(--acc);color:#06281a;border:0;border-radius:14px;padding:14px 34px;font-size:18px;font-weight:700}
-#msg{color:var(--warn);font-size:13px;min-height:1.2em}
+#msg{color:var(--warn);font-size:13px;min-height:1.2em;line-height:1.7;max-width:40em;text-align:left}
+#msg b{color:var(--fg)}
 .sm{color:var(--dim);font-size:13px;line-height:1.6;max-width:36em}
 </style>
 </head>
@@ -248,21 +249,51 @@ function openConn() {
 }
 
 /* ---------- スタート（iOSのセンサー許可・画面常時点灯など） ---------- */
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/.test(navigator.userAgent);
+
+// センサーが使えないときの案内（設定画面はWebページから直接開けないため、手順を表示する）
+function helpHtml() {
+  if (IS_ANDROID) return "<b>モーションセンサーが許可されていません。</b><br>" +
+    "① アドレスバー左のアイコン（🔒など）をタップ →「権限」または「サイトの設定」<br>" +
+    "② 「モーションセンサー」を<b>許可</b>にする<br>" +
+    "（見つからない場合：Chrome右上の︙ → 設定 → サイトの設定 → モーションセンサー → 許可）<br>" +
+    "③ このページを再読み込みして、もう一度「スタート」";
+  if (IS_IOS) return "<b>モーションセンサーが許可されていません。</b><br>" +
+    "Safariのタブを閉じてアプリを完全に終了し、ページを開き直して、確認ダイアログで「許可」を押してください。";
+  return "<b>傾きセンサーの値が取得できません。</b><br>HTTPSで開いているか、ブラウザのサイト設定でモーションセンサーが許可されているか確認してください。";
+}
+function showHelp(extra) {
+  $("msg").innerHTML = helpHtml() + (extra ? "<br><small>" + extra + "</small>" : "");
+  $("startBtn").textContent = "もう一度試す";
+  $("overlay").style.display = "flex";
+}
+
+let started = false;
 $("startBtn").onclick = async () => {
-  const msg = $("msg");
+  const msg = $("msg"); msg.textContent = "";
   try {
     if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
       const r = await DeviceMotionEvent.requestPermission();
-      if (r !== "granted") { msg.textContent = "モーションセンサーの許可が必要です。ブラウザの設定を確認してください。"; return; }
+      if (r !== "granted") { showHelp(); return; }
     }
-  } catch (e) { msg.textContent = "センサーを使えません: " + e.message; return; }
+  } catch (e) { showHelp("詳細: " + e.message); return; }
   try { await navigator.wakeLock.request("screen"); } catch (e) {}
   try { await document.documentElement.requestFullscreen(); } catch (e) {}
   try { await screen.orientation.lock("landscape"); } catch (e) {}
   $("overlay").style.display = "none";
-  connect();
-  requestAnimationFrame(t => { last = t; loop(t); });
-  setTimeout(() => { if (!hasSensor) status("傾きセンサーの値が取得できません（HTTPSで開いていますか？）"); }, 1500);
+  if (!started) {
+    started = true;
+    connect();
+    requestAnimationFrame(t => { last = t; loop(t); });
+  }
+  // センサーの値が届かない場合は、手順つきの案内を出す
+  setTimeout(() => {
+    if (!hasSensor) {
+      try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+      showHelp();
+    }
+  }, 1500);
 };
 </script>
 </body>
