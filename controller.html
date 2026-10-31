@@ -25,7 +25,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:
 #ring{width:44px;height:44px;margin:-22px 0 0 -22px;border:3px solid var(--dim);border-radius:50%}
 #dot{width:30px;height:30px;margin:-15px 0 0 -15px;background:var(--acc);border-radius:50%}
 #line{width:4px;margin-left:-2px;background:var(--acc);opacity:.6}
-#status{position:fixed;left:50%;bottom:4px;transform:translateX(-50%);font-size:11px;color:var(--dim);pointer-events:none;white-space:nowrap}
+#status{position:fixed;left:50%;bottom:6px;transform:translateX(-50%);z-index:4;font-size:12px;color:var(--fg);background:#000a;padding:3px 10px;border-radius:10px;pointer-events:none;max-width:92vw;text-align:center}
 #gear{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:5;background:#252c35;color:var(--fg);border:0;border-radius:14px;padding:4px 14px;font-size:13px}
 #panel{position:fixed;inset:34px 12px 12px;z-index:6;background:#0d1013f2;border:1px solid var(--line);border-radius:14px;padding:12px 16px;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
 #panel.open{display:block}
@@ -243,6 +243,13 @@ function connect() {
 }
 function openConn() {
   conn = peer.connect(pcId, { reliable: false, serialization: "json" });
+  const c = conn, pc = c.peerConnection, types = new Set();
+  const report = () => { if (!c.open) status("接続中… ICE:" + (pc ? pc.iceConnectionState : "?") + " 候補:" + ([...types].join(",") || "なし")); };
+  if (pc) {
+    pc.addEventListener("icecandidate", e => { if (e.candidate && e.candidate.type) { types.add(e.candidate.type); report(); } });
+    pc.addEventListener("iceconnectionstatechange", report);
+  }
+  setTimeout(() => { if (!c.open && conn === c) { report(); status($("status").textContent + " ／ 10秒たっても接続できません"); } }, 10000);
   conn.on("open", () => status("接続済み"));
   conn.on("close", () => { status("切断されました。再接続中…"); setTimeout(connect, 1500); });
   conn.on("error", () => status("通信エラー"));

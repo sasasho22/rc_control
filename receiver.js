@@ -53,6 +53,10 @@ class PhoneController {
         peer.on("connection", (conn) => {
           if (this._conn && this._conn.open) { try { this._conn.close(); } catch (e) {} }
           this._conn = conn;
+          this.onStatus("スマホから接続要求あり…");
+          const pc = conn.peerConnection;
+          if (pc) pc.addEventListener("iceconnectionstatechange", () => { if (!conn.open) this.onStatus("スマホと接続中… ICE:" + pc.iceConnectionState); });
+          setTimeout(() => { if (!conn.open && this._conn === conn) this.onStatus("スマホと接続できません（ICE:" + (pc ? pc.iceConnectionState : "?") + "）"); }, 10000);
           conn.on("open", () => { this.connected = true; this.onStatus("スマホ接続済み"); });
           conn.on("data", (d) => {
             if (!d || typeof d !== "object") return;
