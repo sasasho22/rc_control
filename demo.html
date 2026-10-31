@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RC Pad Demo</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="receiver.js"></script>
+<style>
+:root{--bg:#f4f5f7;--fg:#1a1d21;--dim:#6b7580;--card:#fff;--line:#d9dde2;--acc:#1f9d6b}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--fg:#e8edf2;--dim:#8a95a0;--card:#1b2027;--line:#2c343d;--acc:#3ddc97}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;padding:20px}
+h1{font-size:18px;margin:0 0 14px}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+#qr{background:#fff;padding:8px;border-radius:8px;width:fit-content}
+.sm{font-size:12px;color:var(--dim);line-height:1.6;max-width:260px;word-break:break-all}
+#st{font-weight:600;margin-top:8px}
+.bar{height:10px;background:var(--line);border-radius:5px;position:relative;margin:4px 0 10px;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:var(--acc)}
+canvas{background:var(--card);border:1px solid var(--line);border-radius:12px;max-width:100%}
+</style>
+</head>
+<body>
+<h1>RC Pad デモ（スマホ → PCブラウザ）</h1>
+<div class="row">
+  <div class="card">
+    <div id="qr"></div>
+    <div id="st">準備中…</div>
+    <div class="sm" id="url"></div>
+    <div style="margin-top:10px;width:260px">
+      <div class="sm">ステアリング</div><div class="bar"><i id="bs"></i></div>
+      <div class="sm">アクセル</div><div class="bar"><i id="bt"></i></div>
+      <div class="sm">ブレーキ</div><div class="bar"><i id="bb"></i></div>
+      <div class="sm">キーボード（矢印キー / WASD）でも動作確認できます。</div>
+    </div>
+  </div>
+  <canvas id="cv" width="640" height="420"></canvas>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const pad = new PhoneController({
+  controllerUrl: params.get("c") || undefined,   // 例: ?c=https://xxx.github.io/rc/controller.html
+  onStatus: t => $("st").textContent = t
+});
+pad.start().then(url => {
+  new QRCode($("qr"), { text: url, width: 180, height: 180 });
+  $("url").textContent = url;
+}).catch(e => $("st").textContent = "接続準備に失敗: " + e.type);
+
+// キーボード（デバッグ用）
+const keys = {};
+addEventListener("keydown", e => keys[e.code] = true);
+addEventListener("keyup", e => keys[e.code] = false);
+function input() {
+  const s = pad.state;
+  if (pad.connected && (s.steer || s.throttle || s.brake)) return s;
+  const k = keys;
+  return {
+    steer: ((k.ArrowRight || k.KeyD) ? 1 : 0) - ((k.ArrowLeft || k.KeyA) ? 1 : 0),
+    throttle: (k.ArrowUp || k.KeyW) ? 1 : 0,
+    brake: (k.ArrowDown || k.KeyS) ? 1 : 0
+  };
+}
+
+// 簡易な車（トップビュー）
+const cv = $("cv"), g = cv.getContext("2d");
+const car = { x: 320, y: 210, a: -Math.PI / 2, v: 0 };
+let t0 = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - t0) / 1000); t0 = now;
+  const inp = input();
+  const MAX = 320, ACC = 260, BRK = 420, DRAG = 0.6;
+  if (inp.throttle > 0) car.v += ACC * inp.throttle * dt;
+  if (inp.brake > 0) car.v -= (car.v > 5 ? BRK : ACC * 0.6) * inp.brake * dt;   // 止まった後はバック
+  car.v -= car.v * DRAG * dt;
+  car.v = Math.max(-MAX * 0.4, Math.min(MAX, car.v));
+  car.a += inp.steer * 2.4 * (car.v / MAX) * dt;
+  car.x += Math.cos(car.a) * car.v * dt;
+  car.y += Math.sin(car.a) * car.v * dt;
+  car.x = (car.x + cv.width) % cv.width; car.y = (car.y + cv.height) % cv.height;
+
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.save(); g.translate(car.x, car.y); g.rotate(car.a);
+  g.fillStyle = getComputedStyle(document.body).getPropertyValue("--acc");
+  g.fillRect(-22, -11, 44, 22);
+  g.fillStyle = "#fff"; g.fillRect(8, -8, 10, 16);
+  g.restore();
+
+  const bar = (el, v, signed) => {
+    if (signed) { el.style.left = (v < 0 ? 50 + v * 50 : 50) + "%"; el.style.width = Math.abs(v) * 50 + "%"; }
+    else { el.style.left = 0; el.style.width = v * 100 + "%"; }
+  };
+  bar($("bs"), inp.steer, true); bar($("bt"), inp.throttle); bar($("bb"), inp.brake);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
